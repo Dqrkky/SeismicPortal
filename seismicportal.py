@@ -4,14 +4,15 @@ import datetime
 import json
 
 class WebsocketRaw:
-    def __init__(self, data :dict=None, type_ :any=None):
+    def __init__(self, data :dict=None, _format :any=None):
         self.data :dict = data
-        self.type :any = type_
+        self.format :any = _format
     def todict(self):
         return self.__dict__
 
 class WebsocketPing:
     def __init__(self, time :datetime.datetime=None):
+        self.type = "WebsocketPing"
         self.time :datetime.datetime = time
     def todict(self):
         return self.__dict__
@@ -37,7 +38,8 @@ class SeismicPortal:
             if event_name in self.event_handlers:
                 await self.event_handlers[event_name](event_data)
     async def send_ping(self, websocket=None, ping_interval :int=None):
-        if websocket and ping_interval and isinstance(ping_interval, int):
+        if websocket and \
+        ping_interval != None and isinstance(ping_interval, int):  # noqa: E711
             while True:
                 await websocket.ping()
                 await self.trigger_event(
@@ -56,21 +58,21 @@ class SeismicPortal:
                         loaded_data = json.loads(
                             data
                         )
-                        type_ = "json"
-                    except Exception as e:
+                        _format = "json"
+                    except Exception:
                         loaded_data = data
-                        type_ = "text"
+                        _format = "text"
                     await self.trigger_event(
                         event_name="on_websocket_raw",
                         event_data=WebsocketRaw(
                             data=loaded_data,
-                            type_=type_
+                            _format=_format
                         )
                     )
     async def start(self):
-        if hasattr(self, "config") and self.config and isinstance(self.config, dict) and \
-        "getaway" in self.config and self.config["getaway"] and isinstance(self.config["getaway"], str) and \
-        "ping_interval" in self.config and self.config["ping_interval"] and isinstance(self.config["ping_interval"], int):
+        if hasattr(self, "config") and self.config != None and isinstance(self.config, dict) and \
+        "getaway" in self.config and self.config["getaway"] != None and isinstance(self.config["getaway"], str) and \
+        "ping_interval" in self.config and self.config["ping_interval"] != None and isinstance(self.config["ping_interval"], int):  # noqa: E711
             async with websockets.connect(
                 self.config["getaway"]
             ) as websocket:

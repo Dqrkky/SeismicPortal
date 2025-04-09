@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <!-- Meta settings for character encoding and responsive design -->
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+
+        <!-- Page title -->
+        <title>Real-Time Seismic Data Map</title>
+
+        <!-- Leaflet CSS for map styling -->
+        <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+
+        <!-- Inline CSS for map container and blinking animation -->
+        <style>
+            /* Reset default margin and padding, and set the font family for the entire page */
+            body {
+                margin: 0; /* Remove default margin */
+                padding: 0; /* Remove default padding */
+                font-family: Arial, sans-serif; /* Set the font to Arial or fallback to sans-serif */
+            }
+
+            /* Style the map container to take up the entire viewport */
+            #map {
+                height: 100vh; /* Make the map's height fill 100% of the viewport height */
+                width: 100vw; /* Make the map's width fill 100% of the viewport width */
+            }
+
+            /* Blinking animation for latest earthquake marker */
+            .blinking {
+                animation: blink 0.8s infinite;
+            }
+
+            /* Define the animation for the blinking effect */
+            @keyframes blink {
+                0%, 100% {
+                    opacity: 1; /* Full opacity (visible) at the start and end */
+                }
+                50% {
+                    opacity: 0.2; /* Reduced opacity (faded) at the halfway point of the animation */
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <!-- Map container -->
+        <div id="map"></div>
+
+        <!-- Leaflet JavaScript library -->
+        <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+        <script>
+            const params = new URLSearchParams(
+                {
+                    format: "json", // Request the data in JSON format
+                    limit: 100, // Limit number of events returned
+                    // minlatitude: 34.8,  // Southern Greece
+                    // maxlatitude: 41.8,  // Northern Greece
+                    // minlongitude: 19.3, // Western Greece
+                    // maxlongitude: 28.3  // Eastern Greece
+                }
+            ).toString()
+
+            // Initialize the map centered over Greece with zoom level 7
+            const map = L.map('map', {
+                center: [38.3, 25],
+                zoom: 7
+            });
+
+            // Load OpenStreetMap tiles and add to map
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; OpenStreetMap contributors'
+            }).addTo(map);
+
+            // Layer group to hold earthquake markers
+            let earthquakeLayer = L.layerGroup().addTo(map);
+
+            // Fetch seismic data from SeismicPortal for Greece region
+            async function fetchSeismicData() {
+                try {
+                    // Fetch seismic data from the Seismic Portal API
+                    const response = await fetch(
+                        `https://www.seismicportal.eu/fdsnws/event/1/query?${params}` // Convert the parameters into a query string
+                    );
+
+                    // Log any errors
+                    const data = await response.json();
+
+                    // Log any errors
+                    updateMap(data.features);
+                } catch (error) {
+                    // Log any errors
+                    console.error('Error fetching data:', error);
+                };
+            };
+
+            // Find the most recent earthquake by comparing times
+            function updateMap(earthquakes) {
+                console.log(earthquakes)
+                // Clear old markers
+                //earthquakeLayer.clearLayers();
+
+                // Find the most recent earthquake by comparing times
+                let latestQuake = earthquakes.reduce((latest, quake) => {
+                    const quakeTime = new Date(quake.properties.time);
+                    const latestTime = (latest) ? new Date(latest.properties.time) : 0;
+                    return (quakeTime > latestTime) ? quake : latest;
+                }, null);
+
+                // Loop through each quake and add it to the map
+                earthquakes.forEach(quake => {
+                    // Destructure the 'coordinates' array from the 'geometry' object of the earthquake
+                    const { coordinates } = quake.geometry;
+
+                    // Destructure the 
+                    //   'mag' (magnitude),
+                    //   'flynn_region' (location), 
+                    //   'time'
+                    // from the 'properties' object of the earthquake
+                    const { mag, flynn_region, time } = quake.properties;
+
+                    // Set marker color based on magnitude
+                    const color = (mag > 5) ? 'red' : ((mag > 3) ? 'orange' : 'yellow');
+
+                    // Create a JavaScript Date object from the earthquake's timestamp
+                    const quakeDate = new Date(time);
+
+                    // Create an object (dictionary) to store the date and time components separately
+                    const datetime = {
+                        date: {
+                            date: quakeDate.getDate(),
+                            month: quakeDate.getMonth() + 1,
+                            year: quakeDate.getFullYear()
+                        },
+                        time: {
+                            hours: quakeDate.getHours(),
+                            minutes: quakeDate.getMinutes(),
+                            seconds: quakeDate.getSeconds()
+                        }
+                    };
+
+                    // Format the date in DD/MM/YYYY format (day, month, year)
+                    const formattedDate = `${datetime.date.date}/${datetime.date.month}/${datetime.date.year}`;
+
+                    // Format the time in 24-hour format (hours:minutes:seconds)
+                    const formattedTime = `${datetime.time.hours}:${datetime.time.minutes}:${datetime.time.seconds}`;
+
+                    // Create a circle marker for the earthquake
+                    const marker = L.circleMarker([coordinates[1], coordinates[0]], {
+                        radius: mag ** 1.25, // Marker size based on magnitude
+                        color: color,
+                        fillColor: color,
+                        fillOpacity: 0.7
+                    });
+
+                    // Bind popup info to marker
+                    var popupContent = `<b>Location:</b> ${flynn_region}<br><b>Magnitude:</b> ${mag}<br><b>Date:</b> ${formattedDate}<br><b>Time:</b> ${formattedTime}`;
+                    marker.bindPopup(popupContent);
+
+                    // Add marker to earthquake layer group
+                    marker.addTo(earthquakeLayer);
+
+                    // Add blinking to latest quake
+                    if (quake === latestQuake) {
+                        const element = marker.getElement();
+                        if (element) {
+                            // Add blink effect to element 
+                            element.classList.add('blinking');
+
+                            // Open the popup for the latest quake
+                            marker.openPopup();
+
+                            // Zoom to latest event
+                            map.setView([coordinates[1], coordinates[0]], 8);
+
+                            // Remove blink after 20 seconds
+                            setTimeout(() => {
+                                element.classList.remove('blinking');
+                            }, 1000 * 20);
+                        };
+                    };
+                });
+            };
+
+            // Initial call to load earthquake data when the page loads
+            fetchSeismicData();
+
+            // Connect to websockets for live events
+            const socket = new WebSocket(`wss://www.seismicportal.eu/standing_order/websocket?${params}`);
+
+            socket.onmessage = (event) => {
+                try {
+                    const quake = JSON.parse(event.data);
+                    updateMap([quake.data]);
+                } catch (err) {
+                    console.error("Invalid message:", err);
+                }
+            };
+        </script>
+    </body>
+</html>
